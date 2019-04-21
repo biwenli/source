@@ -1,0 +1,241 @@
+From 83e154c277c8fe5a0b29cf732bca584ba2b22766 Mon Sep 17 00:00:00 2001
+From: Yangbo Lu <yangbo.lu@nxp.com>
+Date: Thu, 17 Jan 2019 13:12:23 +0800
+Subject: [PATCH 7/7] i2c-slave: add userspace application
+
+Signed-off-by: Zhang Ying-22455 <ying.zhang22455@nxp.com>
+---
+ drivers/i2c/i2c-slave.c |  221 +++++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 221 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/i2c/i2c-slave.c
+
+diff --git a/drivers/i2c/i2c-slave.c b/drivers/i2c/i2c-slave.c
+new file mode 100644
+index 0000000..16a92bd
+--- /dev/null
++++ b/drivers/i2c/i2c-slave.c
+@@ -0,0 +1,221 @@
++#include <malloc.h>
++#include <sys/ioctl.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <memory.h>
++#include <stdbool.h>
++
++#define I2C_SLAVE_WAIT	0x0721
++#define I2C_SLAVE_RESET	0x0722
++
++static char *device = "/dev/i2c-slave-0";
++
++struct i2c_slave_data {
++	char data[256];
++	int len;
++};
++
++/* @Function Name: i2c_open_accept()
++ *
++ * @Description: This API is called to wait until an i2c
++ * 		 master device starts a read or write transaction.
++ *		 The direction of transaction (read or write) is notified
++ *		 to the application once this function returns.
++ *
++ * @param channel: i2c slave interface.
++ * @param address: The i2c address of the slave i2c device.
++ * @param ptr_data_direction: Function returns #TRUE via this parameter
++ *			      for an i2c slave read transaction. It returns #FALSE for
++ *			      i2c slave write transaction. Pointer supplied must not be NULL.
++ *
++ * @retval: -1 - The function call was failed.
++ *	     0 - The function call was successful.
++ */
++int i2c_open_accept(char channel, char address, char *ptr_data_direction)
++{
++	int fd, ret = 0;
++
++	/* direction:
++	 *	0 - master read
++	 *	1 - master write
++	 *	2 - invalid
++	 */
++	int direction = 2;
++
++	fd = open(device, O_RDWR);
++	if (fd < 0) {
++		printf("i2c_open_accept: opening error\n");
++		ret = -1;
++		goto err;
++	}
++
++	do {
++		if (ioctl(fd, I2C_SLAVE_WAIT, &direction)) {
++			printf("i2c_open_accept: ioctl error\n");
++			ret = -1;
++			goto err;
++		}
++	} while (direction == 2);
++
++	*ptr_data_direction = direction;
++err:
++	close(fd);
++	return ret;
++}
++
++/* @Function Name: i2c_slave_receive()
++ *
++ * @Description: This API is called to read data from I2C master devices on the bus.
++ *
++ * @param ptr_read_buffer: Function returns data received, by storing it
++ *			   to receive buffer pointed by this parameter.
++ *			   It must not be NULL.
++ * @param size_of_data: The size of data (in bytes) for which
++ *			the application has allocated the read buffer.
++ * @param ptr_read_data_length: Returns the number of bytes received in ptr_read_buffer.
++ * @param ptr_is_read_complete: Function returns #TRUE via this parameter,
++ *				if read transaction has completed.
++ *				Its value is #FALSE otherwise.
++ *
++ * @retval: -1 - The function call was failed.
++ *	     0 - Operation completed successfully.
++ *
++ */
++int i2c_slave_receive(char *ptr_read_buffer, int size_of_data,
++		      int *ptr_read_data_length, char *ptr_is_read_complete)
++{
++	struct i2c_slave_data data;
++	int fd, ret = 0;
++
++	memset(&data, 0, sizeof(data));
++
++	fd = open(device, O_RDWR);
++	if (fd < 0) {
++		printf("i2c_slave_receive: opening error\n");
++		ret = -1;
++		goto err;
++	}
++
++	ret = read(fd, &data, sizeof(data));
++	if (ret) {
++		printf("i2c_slave_receive: read error\n");
++		goto err;
++	}
++
++	memcpy(ptr_read_buffer, data.data, data.len);
++	*ptr_read_data_length = data.len;
++	*ptr_is_read_complete = 1;
++
++err:
++	close(fd);
++	return ret;
++}
++
++/* @Function Name: i2c_slave_send()
++ *
++ * @Description: This API is called to transmit data to I2C
++ *		 master devices on the bus.
++ *
++ * @param ptr_write_buffer: Function reads data to be transmitted
++ *			    from buffer pointed by this parameter.
++ * @param size_of_data: The size of data (in bytes) that is to be transmitted.
++ * @param ptr_write_data_length: Function returns length of data that
++ *				 is actually transmitted via this parameter.
++ * @param ptr_is_write_complete: Function returns #TRUE via this parameter,
++ *				 if write transaction has completed.
++ *				 Its value is #FALSE otherwise.
++ *
++ * @retval: -1 - The function call was failed.
++ *	     0 - Operation completed successfully.
++ */
++int i2c_slave_send(char *ptr_write_buffer, int size_of_data,
++		   int *ptr_write_data_length, char *ptr_is_write_complete)
++{
++	struct i2c_slave_data data;
++	int fd, ret = 0;
++
++	memset(&data, 0, sizeof(data));
++
++	fd = open(device, O_RDWR);
++	if (fd < 0) {
++		printf("i2c_slave_send: opening error\n");
++		ret = -1;
++		goto err;
++	}
++
++	memcpy(data.data, ptr_write_buffer, 256);
++	data.len = size_of_data;
++
++	ret = write(fd, &data, sizeof(data));
++	if (ret) {
++		printf("i2c_slave_send: write error\n");
++		goto err;
++	}
++
++	*ptr_write_data_length = data.len;
++	*ptr_is_write_complete = 1;
++
++err:
++	close(fd);
++	return ret;
++}
++
++int main(void)
++{
++	char channel = 0;
++	char address = 0;
++	char data_direction = 0;
++	char *ptr_read_buffer, *ptr_write_buffer;
++	char is_read_complete ;
++	char is_write_complete;
++	int act_read_length;
++	int act_write_length;
++	int fd;
++
++	ptr_read_buffer = calloc(256, 1);
++	ptr_write_buffer = calloc(256, 1);
++
++	fd = open(device, O_RDWR);
++	if (fd < 0) {
++		printf("i2c_slave: opening error\n");
++		return -1;
++	}
++
++	if (ioctl(fd, I2C_SLAVE_RESET, 0)) {
++		printf("i2c_slave: ioctl error\n");
++		close(fd);
++		return -1;
++	}
++	close(fd);
++
++	while(1) {
++		printf("i2c-slave: wait master...\n");
++		/* Block on open accept */
++		if (i2c_open_accept(channel, address, &data_direction))
++			return -1;
++
++		/* If master has sent for a WRITE transaction.*/
++		if(data_direction != 0) {
++			/* Start the Slave Receive operation */
++			if (i2c_slave_receive(ptr_read_buffer, 256, &act_read_length,
++					      &is_read_complete))
++				return -1;
++
++			printf("\r\n act_read_length:%x is_read_complete:%x, data[0]:%x, data[1]:%x\n",
++			       act_read_length, is_read_complete, ptr_read_buffer[0], ptr_read_buffer[1]);
++		/* If master has sent for a READ transaction. */
++		} else {
++			/* Assign data*/
++			ptr_write_buffer[0] = 0x55;
++			ptr_write_buffer[1] = 0xAA;
++
++			/* Start the Slave Send operation */
++			if (i2c_slave_send(ptr_write_buffer, 256, &act_write_length, &is_write_complete))
++				return -1;
++
++			printf("\r\n act_write_length:%x is_write_complete:%x, data[0]:%x, data[1]:%x\n",
++			       act_write_length, is_write_complete, ptr_write_buffer[0], ptr_write_buffer[1]);
++		}
++	}
++	return 0;
++}
+-- 
+1.7.1
+

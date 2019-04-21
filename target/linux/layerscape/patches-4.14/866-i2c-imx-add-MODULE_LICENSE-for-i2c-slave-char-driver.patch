@@ -1,0 +1,7 @@
+--- a/drivers/i2c/i2c-slave-chardev.c
++++ b/drivers/i2c/i2c-slave-chardev.c
+@@ -226,3 +226,4 @@ static struct i2c_driver i2c_slave_char_
+ 	.id_table = i2c_slave_char_id,
+ };
+ module_i2c_driver(i2c_slave_char_driver);
++MODULE_LICENSE("GPL v2");

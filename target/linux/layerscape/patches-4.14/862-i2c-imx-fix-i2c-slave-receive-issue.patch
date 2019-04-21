@@ -1,0 +1,84 @@
+--- a/drivers/i2c/busses/i2c-imx.c
++++ b/drivers/i2c/busses/i2c-imx.c
+@@ -644,7 +644,7 @@ static void i2c_imx_slave_init(struct im
+ void i2c_imx_send_data(struct i2c_client *slave)
+ {
+ 	/* wake up wait queue */
+-	wake_up(&slave->tx_queue);
++
+ 	slave->valid = 0;
+ }
+ 
+@@ -670,18 +670,16 @@ static void i2c_imx_slave_process_irq(st
+ 			slave->idx = 0;
+ 			slave->is_master_read = true;
+ 			slave->valid = 1;
+-			/* wait until data is ready */
+-			wait_event_timeout(slave->tx_queue,
+-					   slave->valid == 0,
+-					   IMX_I2C_STATE_DELAY);
+-			if (slave->valid != 0) {
+-				dev_dbg(&i2c_imx->adapter.dev, "<%s> Timeout\n", __func__);
+-			} else {
+-				data = slave->tx_buf[0];
+-				slave->idx = 1;
+-				/*send data */
+-				imx_i2c_write_reg(data, i2c_imx, IMX_I2C_I2DR);
++			
++			while(1) {
++				msleep(10);
++				if(slave->valid == 0)
++					break;
+ 			}
++			/*send data */
++			imx_i2c_write_reg(slave->tx_buf[0], i2c_imx, IMX_I2C_I2DR);
++			slave->idx = 1;
++
+ 		} else {
+ 			/* master wants to write to us */
+ 			dev_dbg(&i2c_imx->adapter.dev, "write requested");
+@@ -691,10 +689,7 @@ static void i2c_imx_slave_process_irq(st
+ 			/* slave receive */			
+ 			ctl &= ~I2CR_MTX;
+ 			imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
+-#if 0
+-			/* wake up wait queue */
+-			wake_up(&slave->wait_queue);
+-#endif
++
+ 			/*dummy read */
+ 			data = imx_i2c_read_reg(i2c_imx, IMX_I2C_I2DR);
+ 		}
+@@ -725,15 +720,14 @@ static void i2c_imx_slave_process_irq(st
+ 
+ 				/* read data from i2dr and store */
+ 				data = imx_i2c_read_reg(i2c_imx, IMX_I2C_I2DR);
++				slave->rx_buf[slave->idx++] = data;
+ 				dev_dbg(&i2c_imx->adapter.dev,
+ 					"received 0x%x", data);
+-				slave->rx_buf[slave->idx++] = data;
++				msleep(5);
+ 			} else { /* STOP signal is detected*/
+ 				dev_dbg(&i2c_imx->adapter.dev,
+ 					"STOP signal detected");
+-				if (slave->is_master_read == false)
+-					slave->valid = 1;
+-				slave->len = slave->idx;
++				
+ 			}
+ 		}
+ 	}
+@@ -849,9 +843,10 @@ static int slave_evt_handler(struct imx_
+ 			data = 0;
+ 			set_state(i2c_imx,  STATE_IDLE);
+ 			dev_dbg(&i2c_imx->adapter.dev, "end of package");
+-			slave->len = slave->idx;
+-			slave->valid = 1;
+-			i2c_slave_event(i2c_imx->slave, I2C_SLAVE_STOP, &data);
++			if (slave->is_master_read == false) {
++				slave->len = slave->idx;
++				slave->valid = 1;
++			}
+ 		}
+ 
+ 		if (i2c_imx->slave_poll_cnt > 10) {

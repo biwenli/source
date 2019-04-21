@@ -1,0 +1,11 @@
+--- a/include/uapi/linux/i2c-dev.h
++++ b/include/uapi/linux/i2c-dev.h
+@@ -53,7 +53,7 @@
+ #define I2C_SMBUS	0x0720	/* SMBus transfer */
+ 
+ #define I2C_SLAVE_WAIT		0x0721
+-
++#define I2C_SLAVE_RESET		0x0722
+ /* This is the structure as used in the I2C_SMBUS ioctl call */
+ struct i2c_smbus_ioctl_data {
+ 	__u8 read_write;

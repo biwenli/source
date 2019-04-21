@@ -1,0 +1,97 @@
+--- a/drivers/i2c/busses/i2c-imx.c
++++ b/drivers/i2c/busses/i2c-imx.c
+@@ -645,7 +645,7 @@ void i2c_imx_send_data(struct i2c_client
+ {
+ 	/* wake up wait queue */
+ 
+-	slave->valid = 0;
++	slave->tx_valid = 0;
+ }
+ 
+ 
+@@ -668,12 +668,11 @@ static void i2c_imx_slave_process_irq(st
+ 			imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
+ 
+ 			slave->idx = 0;
+-			slave->is_master_read = true;
+-			slave->valid = 1;
++			slave->tx_valid = 1;
+ 			
+ 			while(1) {
+-				msleep(10);
+-				if(slave->valid == 0)
++				msleep(1);
++				if(slave->tx_valid == 0)
+ 					break;
+ 			}
+ 			/*send data */
+@@ -683,7 +682,7 @@ static void i2c_imx_slave_process_irq(st
+ 		} else {
+ 			/* master wants to write to us */
+ 			dev_dbg(&i2c_imx->adapter.dev, "write requested");
+-			slave->is_master_read = false;
++			
+ 			slave->idx = 0;
+ 			
+ 			/* slave receive */			
+@@ -843,10 +842,9 @@ static int slave_evt_handler(struct imx_
+ 			data = 0;
+ 			set_state(i2c_imx,  STATE_IDLE);
+ 			dev_dbg(&i2c_imx->adapter.dev, "end of package");
+-			if (slave->is_master_read == false) {
+-				slave->len = slave->idx;
+-				slave->valid = 1;
+-			}
++			slave->len = slave->idx;
++			slave->rx_flag = 0;
++			slave->rx_valid = 1;
+ 		}
+ 
+ 		if (i2c_imx->slave_poll_cnt > 10) {
+@@ -1022,7 +1020,9 @@ static int i2c_imx_reg_slave(struct i2c_
+ 	i2c_imx->slave = slave;
+ 	init_waitqueue_head(&slave->tx_queue);
+ 	slave->idx = 0;
+-	slave->valid = 0;
++	slave->rx_valid = 0;
++	slave->tx_valid = 0;
++	slave->rx_flag = 0;
+ 
+ 	/* Set the Slave address */
+ 	imx_i2c_write_reg((i2c_imx->slave->addr << 1), i2c_imx, IMX_I2C_IADR);
+@@ -1318,6 +1318,21 @@ static irqreturn_t i2c_imx_isr(int irq,
+ 			i2c_imx_clear_ial_bit(i2c_imx);
+ 			i2c_imx_evt_put(&i2c_imx->events, EVT_AL);
+ 		} else {
++			if (status & I2SR_IAAS) {
++				if ( i2c_imx->slave->rx_flag == 1 ) {
++					i2c_imx->slave->len = i2c_imx->slave->idx;
++					i2c_imx->slave->rx_flag = 0;
++					i2c_imx->slave->rx_valid = 1;
++				}
++			}
++			else {
++				if (!(ctl & I2CR_MTX)) {
++					if (status & I2SR_IBB) {
++						i2c_imx->slave->rx_flag = 1;
++					}
++				}
++			}
++
+ 			dev_dbg(&i2c_imx->adapter.dev, "slave interrupt");
+ 			i2c_imx_evt_put(&i2c_imx->events, EVT_SI);
+ 			wake_up(&i2c_imx->state_queue);
+--- a/include/linux/i2c.h
++++ b/include/linux/i2c.h
+@@ -250,8 +250,9 @@ struct i2c_client {
+ 	struct list_head detected;
+ #if IS_ENABLED(CONFIG_I2C_SLAVE)
+ 	i2c_slave_cb_t slave_cb;	/* callback for slave mode	*/
+-	bool is_master_read;
+-	bool valid;
++	bool rx_valid;
++	bool tx_valid;
++	bool rx_flag;
+ 	char rx_buf[256];
+ 	char tx_buf[256];
+ 	int  len;

@@ -1,0 +1,54 @@
+Index: linux-4.14.106/drivers/i2c/i2c-slave-chardev.c
+===================================================================
+--- linux-4.14.106.orig/drivers/i2c/i2c-slave-chardev.c
++++ linux-4.14.106/drivers/i2c/i2c-slave-chardev.c
+@@ -64,7 +64,7 @@ static ssize_t slave_read(struct file *f
+ 	struct i2c_slave *slave = filp->private_data;
+ 	int ret;
+ 
+-	slave->client->valid = false;
++	slave->client->rx_valid = false;
+ 
+ 	ret = copy_to_user(buf, slave->data.data, sizeof(struct i2c_slave_data));
+ 	if (ret)
+@@ -78,17 +78,18 @@ static ssize_t slave_write(struct file *
+ 	struct i2c_slave *slave = filp->private_data;
+ 	int ret;
+ 
+-	slave->client->valid = false;
+-
+ 	ret = copy_from_user(slave->data.data, buf, size);
+-	if (ret)
++	if (ret) {
++		slave->client->tx_valid = false;
+ 		return -EFAULT;
+-
++	}
+ 	slave->client->len = slave->data.len;
+ 	memcpy(slave->client->tx_buf, slave->data.data, 256);
+ 
+ 	//call send(client)
+ 
++	slave->client->tx_valid = false;
++
+ 	return 0;
+ }
+ 
+@@ -104,13 +105,14 @@ static long slave_ioctl(struct file *fil
+ 
+ 	switch (cmd) {
+ 	case I2C_SLAVE_RESET:
+-		slave->client->valid = false;
++		slave->client->tx_valid = false;
++		slave->client->rx_valid = false;
+ 		break;
+ 	case I2C_SLAVE_WAIT:
+-		if (!slave->client->valid)
++		if ((!slave->client->tx_valid) && (!slave->client->rx_valid))
+ 			break;
+ 
+-		if (slave->client->is_master_read) {
++		if (slave->client->tx_valid) {
+ 			direction = 0;
+ 		} else {
+ 			direction = 1;

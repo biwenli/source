@@ -1,0 +1,58 @@
+--- a/drivers/i2c/busses/i2c-imx.c
++++ b/drivers/i2c/busses/i2c-imx.c
+@@ -653,6 +653,7 @@ static void i2c_imx_slave_process_irq(st
+ {
+ 	unsigned int status, ctl;
+ 	u8 data;
++	int loop = 0;
+ 	struct i2c_client *slave;
+ 
+ 	slave = i2c_imx->slave;
+@@ -663,18 +664,22 @@ static void i2c_imx_slave_process_irq(st
+ 		if (status & I2SR_SRW) {
+ 			/* master wants to read from us */
+ 			
+-			/* slave transimt */
+-			ctl |= I2CR_MTX;
+-			imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
+ 
+ 			slave->idx = 0;
+ 			slave->tx_valid = 1;
+ 			
+ 			while(1) {
+-				msleep(1);
+-				if(slave->tx_valid == 0)
+-					break;
++				loop++;
++				if(loop > 100) {
++					slave->tx_valid = 0;
++					return;
++				}
+ 			}
++
++			/* slave transimt */
++			ctl |= I2CR_MTX;
++			imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
++
+ 			/*send data */
+ 			imx_i2c_write_reg(slave->tx_buf[0], i2c_imx, IMX_I2C_I2DR);
+ 			slave->idx = 1;
+@@ -698,12 +703,12 @@ static void i2c_imx_slave_process_irq(st
+ 				
+ 				ctl |= I2CR_MTX;
+ 				imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
+-				if(slave->idx < slave->len) {
+-					data = slave->tx_buf[slave->idx++];
+-					/* send data */
+-					imx_i2c_write_reg(data, i2c_imx, IMX_I2C_I2DR);
+-				} else {
+-				}				
++				data = slave->tx_buf[slave->idx];
++				if(slave->idx < 256)
++					slave->idx++;
++
++				/* send data */
++				imx_i2c_write_reg(data, i2c_imx, IMX_I2C_I2DR);	
+ 			} else {
+ 				/* received NAK */
+ 				

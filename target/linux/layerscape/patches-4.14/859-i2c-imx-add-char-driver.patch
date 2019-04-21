@@ -1,0 +1,246 @@
+From 7440667c5ec6e1c8011a1018694a4ce991d373e1 Mon Sep 17 00:00:00 2001
+From: Yangbo Lu <yangbo.lu@nxp.com>
+Date: Thu, 17 Jan 2019 14:23:17 +0800
+Subject: [PATCH 5/7] i2c: imx: add char driver
+
+Signed-off-by: Zhang Ying-22455 <ying.zhang22455@nxp.com>
+---
+ drivers/i2c/i2c-slave-chardev.c |  226 +++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 226 insertions(+), 0 deletions(-)
+ create mode 100644 drivers/i2c/i2c-slave-chardev.c
+
+diff --git a/drivers/i2c/i2c-slave-chardev.c b/drivers/i2c/i2c-slave-chardev.c
+new file mode 100644
+index 0000000..32129f6
+--- /dev/null
++++ b/drivers/i2c/i2c-slave-chardev.c
+@@ -0,0 +1,226 @@
++/*
++ * I2C slave mode char dev driver
++ *
++ * Copyright 2019 NXP
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation; version 2 of the License.
++ *
++ * Because most IP blocks can only detect one I2C slave address anyhow, this
++ * driver does not support simulating EEPROM types which take more than one
++ * address. It is prepared to simulate bigger EEPROMs with an internal 16 bit
++ * pointer, yet implementation is deferred until the need actually arises.
++ */
++
++#include <linux/i2c.h>
++#include <linux/init.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/sysfs.h>
++#include <linux/cdev.h>
++#include <linux/i2c-dev.h>
++#include <linux/uaccess.h>
++#include <linux/fs.h>
++struct i2c_slave_data {
++	char data[256];
++	int len;
++};
++
++struct i2c_slave {
++	struct i2c_client *client;
++	struct i2c_slave_data data;
++	struct cdev *chardev;
++	int index;
++	dev_t devid;
++};
++
++static struct class *i2c_slave_class = NULL;
++static struct i2c_slave *slave_p;
++static dev_t i2c_slave_devt;
++static DEFINE_IDA(i2c_slave_map);
++
++static int i2c_slave_char_cb(struct i2c_client *client,
++			     enum i2c_slave_event event, u8 *val)
++{
++	return 0;
++}
++
++static int slave_open(struct inode *inode, struct file *filp)
++{
++	filp->private_data = slave_p;
++	return 0;
++}
++
++static int slave_release(struct inode *inode, struct file *filp)
++{
++	return 0;
++}
++
++static ssize_t slave_read(struct file *filp, char __user *buf, size_t size, loff_t *offset)
++{
++	struct i2c_slave *slave = filp->private_data;
++	int ret;
++
++	slave->client->valid = false;
++
++	ret = copy_to_user(buf, slave->data.data, sizeof(struct i2c_slave_data));
++	if (ret)
++		return -EFAULT;
++
++	return 0;
++}
++
++static ssize_t slave_write(struct file *filp, const char __user *buf, size_t size, loff_t *offset)
++{
++	struct i2c_slave *slave = filp->private_data;
++	int ret;
++
++	slave->client->valid = false;
++
++	ret = copy_from_user(slave->data.data, buf, size);
++	if (ret)
++		return -EFAULT;
++
++	slave->client->len = slave->data.len;
++	memcpy(slave->client->tx_buf, slave->data.data, 256);
++
++	//call send(client)
++
++	return 0;
++}
++
++static long slave_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
++{
++	struct i2c_slave *slave = file->private_data;
++	/* direction:
++	 *	0 - master read
++	 *	1 - master write
++	 *	2 - invalid
++	 */
++	int direction = 2;
++
++	switch (cmd) {
++	case I2C_SLAVE_RESET:
++		slave->client->valid = false;
++		break;
++	case I2C_SLAVE_WAIT:
++		if (!slave->client->valid)
++			break;
++
++		if (slave->client->is_master_read) {
++			direction = 0;
++		} else {
++			direction = 1;
++			memcpy(slave->data.data, slave->client->rx_buf, 256);
++			slave->data.len = slave->client->len;
++		}
++
++		if (copy_to_user((int *)arg, &direction, sizeof(int)))
++			return -1;
++
++		break;
++	default:
++		return -1;
++	}
++
++	return 0;
++}
++
++static struct file_operations slave_fops = {
++	.owner = THIS_MODULE,
++	.open = slave_open,
++	.release = slave_release,
++	.read = slave_read,
++	.write = slave_write,
++	.unlocked_ioctl = slave_ioctl,
++}; 
++
++static int i2c_slave_char_probe(struct i2c_client *client, const struct i2c_device_id *id)
++{
++	struct i2c_slave *slave;
++	unsigned size = id->driver_data;
++	int index;
++	int ret;
++
++	slave = devm_kzalloc(&client->dev, sizeof(struct i2c_slave) + size, GFP_KERNEL);
++	if (!slave)
++		return -ENOMEM;
++	slave_p = slave;
++
++	if (!i2c_slave_class) {
++		i2c_slave_class = class_create(THIS_MODULE, "i2c-slave");
++
++		ret = alloc_chrdev_region(&i2c_slave_devt, 0, MINORMASK + 1, "i2c-slave");
++		if (ret)
++			return ret;
++	}
++
++	slave->client = client;
++	slave->chardev = cdev_alloc();
++	if (!slave->chardev)
++		return -ENOMEM;
++
++	cdev_init(slave->chardev, &slave_fops);
++
++	index = ida_simple_get(&i2c_slave_map, 0, MINORMASK + 1, GFP_KERNEL);
++	if (index < 0) {
++		ret = index;
++		goto no_slot;
++	}
++
++	slave->index = index;
++	slave->devid = MKDEV(MAJOR(i2c_slave_devt), index);
++
++	ret = cdev_add(slave->chardev, slave->devid, 1);
++	if (ret) {
++		goto no_cdev_add;
++	}
++
++	device_create(i2c_slave_class, NULL, slave->devid, NULL, "i2c-slave-%d", index);
++
++	i2c_set_clientdata(client, slave);
++
++	ret = i2c_slave_register(client, i2c_slave_char_cb);
++	if (ret) {
++		goto no_slave;
++	}
++
++	return 0;
++
++no_slave:
++no_cdev_add:
++	ida_simple_remove(&i2c_slave_map, index);
++no_slot:
++	cdev_del(slave->chardev);
++	return ret;
++};
++
++static int i2c_slave_char_remove(struct i2c_client *client)
++{
++	struct i2c_slave *slave = i2c_get_clientdata(client);
++
++	i2c_slave_unregister(client);
++	ida_simple_remove(&i2c_slave_map, slave->index);
++	cdev_del(slave->chardev);
++
++	return 0;
++}
++
++static const struct i2c_device_id i2c_slave_char_id[] = {
++	{ "i2c-slave", 2048 / 8 },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, i2c_slave_char_id);
++
++static struct i2c_driver i2c_slave_char_driver = {
++	.driver = {
++		.name = "i2c-slave-char",
++	},
++	.probe = i2c_slave_char_probe,
++	.remove = i2c_slave_char_remove,
++	.id_table = i2c_slave_char_id,
++};
++module_i2c_driver(i2c_slave_char_driver);
+-- 
+1.7.1
+

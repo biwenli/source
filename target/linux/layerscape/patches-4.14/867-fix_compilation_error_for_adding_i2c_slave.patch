@@ -1,0 +1,19 @@
+--- a/drivers/i2c/busses/i2c-imx.c
++++ b/drivers/i2c/busses/i2c-imx.c
+@@ -54,6 +54,7 @@
+ #include <linux/pm_runtime.h>
+ #include <linux/sched.h>
+ #include <linux/slab.h>
++#include <uapi/linux/sched/types.h>
+ #include <linux/gpio.h>
+ #include <linux/of_address.h>
+ #include <linux/of.h>
+@@ -1247,7 +1248,7 @@ static int i2c_imx_start(struct imx_i2c_
+ 	return result;
+ }
+ 
+-+static void i2c_imx_hw_stop(struct imx_i2c_struct *i2c_imx)
++static void i2c_imx_hw_stop(struct imx_i2c_struct *i2c_imx)
+ {
+ 	unsigned int temp = 0;
+ 
