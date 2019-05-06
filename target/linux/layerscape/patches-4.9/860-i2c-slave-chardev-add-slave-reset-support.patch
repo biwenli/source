@@ -1,0 +1,25 @@
+From e9a2c1dbf27011470534d3ee1e62f5f5c4ec4634 Mon Sep 17 00:00:00 2001
+From: Yangbo Lu <yangbo.lu@nxp.com>
+Date: Thu, 17 Jan 2019 13:11:34 +0800
+Subject: [PATCH 6/7] i2c-slave-chardev: add slave reset support
+
+Signed-off-by: Zhang Ying-22455 <ying.zhang22455@nxp.com>
+---
+ include/uapi/linux/i2c-dev.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/uapi/linux/i2c-dev.h b/include/uapi/linux/i2c-dev.h
+index 6b49c0e..4a8e8d8 100644
+--- a/include/uapi/linux/i2c-dev.h
++++ b/include/uapi/linux/i2c-dev.h
+@@ -52,6 +52,7 @@
+ #define I2C_SMBUS	0x0720	/* SMBus transfer */
+ 
+ #define I2C_SLAVE_WAIT		0x0721
++#define I2C_SLAVE_RESET		0x0722
+ 
+ /* This is the structure as used in the I2C_SMBUS ioctl call */
+ struct i2c_smbus_ioctl_data {
+-- 
+1.7.1
+

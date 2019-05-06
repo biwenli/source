@@ -1,0 +1,67 @@
+From eff34d54f62692e41d2165a259b0c16842db05d0 Mon Sep 17 00:00:00 2001
+From: Yangbo Lu <yangbo.lu@nxp.com>
+Date: Fri, 18 Jan 2019 10:50:17 +0800
+Subject: [PATCH 09/10] i2c-slave-chardev: use rx_valid/tx_valid instead valid
+
+Signed-off-by: Yangbo Lu <yangbo.lu@nxp.com>
+---
+ drivers/i2c/i2c-slave-chardev.c |   17 ++++++++++-------
+ 1 files changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/i2c/i2c-slave-chardev.c b/drivers/i2c/i2c-slave-chardev.c
+index 32129f6..62f7c03 100644
+--- a/drivers/i2c/i2c-slave-chardev.c
++++ b/drivers/i2c/i2c-slave-chardev.c
+@@ -64,7 +64,7 @@ static ssize_t slave_read(struct file *filp, char __user *buf, size_t size, loff
+ 	struct i2c_slave *slave = filp->private_data;
+ 	int ret;
+ 
+-	slave->client->valid = false;
++	slave->client->rx_valid = false;
+ 
+ 	ret = copy_to_user(buf, slave->data.data, sizeof(struct i2c_slave_data));
+ 	if (ret)
+@@ -78,17 +78,19 @@ static ssize_t slave_write(struct file *filp, const char __user *buf, size_t siz
+ 	struct i2c_slave *slave = filp->private_data;
+ 	int ret;
+ 
+-	slave->client->valid = false;
+-
+ 	ret = copy_from_user(slave->data.data, buf, size);
+-	if (ret)
++	if (ret) {
++		slave->client->tx_valid = false;
+ 		return -EFAULT;
++	}
+ 
+ 	slave->client->len = slave->data.len;
+ 	memcpy(slave->client->tx_buf, slave->data.data, 256);
+ 
+ 	//call send(client)
+ 
++	slave->client->tx_valid = false;
++
+ 	return 0;
+ }
+ 
+@@ -104,13 +106,14 @@ static long slave_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+ 
+ 	switch (cmd) {
+ 	case I2C_SLAVE_RESET:
+-		slave->client->valid = false;
++		slave->client->tx_valid = false;
++		slave->client->rx_valid = false;
+ 		break;
+ 	case I2C_SLAVE_WAIT:
+-		if (!slave->client->valid)
++		if ((!slave->client->tx_valid) && (!slave->client->rx_valid))
+ 			break;
+ 
+-		if (slave->client->is_master_read) {
++		if (slave->client->tx_valid) {
+ 			direction = 0;
+ 		} else {
+ 			direction = 1;
+-- 
+1.7.1
+

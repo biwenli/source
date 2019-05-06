@@ -1,0 +1,30 @@
+From ccd31652ce0559498f1704dc512a2b8c6a38a803 Mon Sep 17 00:00:00 2001
+From: Yangbo Lu <yangbo.lu@nxp.com>
+Date: Thu, 14 Mar 2019 18:00:35 +0800
+Subject: [PATCH] i2c-slave-chardev: fix module removing
+
+Signed-off-by: Yangbo Lu <yangbo.lu@nxp.com>
+---
+ drivers/i2c/i2c-slave-chardev.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/i2c/i2c-slave-chardev.c b/drivers/i2c/i2c-slave-chardev.c
+index 12d47958e07d..a78322cdacbc 100644
+--- a/drivers/i2c/i2c-slave-chardev.c
++++ b/drivers/i2c/i2c-slave-chardev.c
+@@ -206,8 +206,11 @@ static int i2c_slave_char_remove(struct i2c_client *client)
+ 	struct i2c_slave *slave = i2c_get_clientdata(client);
+ 
+ 	i2c_slave_unregister(client);
+-	ida_simple_remove(&i2c_slave_map, slave->index);
++	device_destroy(i2c_slave_class, slave->devid);
+ 	cdev_del(slave->chardev);
++	ida_simple_remove(&i2c_slave_map, slave->index);
++	unregister_chrdev_region(i2c_slave_devt, MINORMASK + 1);
++	class_destroy(i2c_slave_class);
+ 
+ 	return 0;
+ }
+-- 
+2.17.1
+

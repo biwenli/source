@@ -1,0 +1,22 @@
+From f2d9900f21a5c91c98e3d74df85f7e2f2cca1b0c Mon Sep 17 00:00:00 2001
+From: Zhang Ying-22455 <ying.zhang22455@nxp.com>
+Date: Tue, 22 Jan 2019 10:57:17 +0800
+Subject: [PATCH 12/12] i2c: imx: add MODULE_LICENSE for i2c slave char driver
+
+Signed-off-by: Zhang Ying-22455 <ying.zhang22455@nxp.com>
+---
+ drivers/i2c/i2c-slave-chardev.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/i2c/i2c-slave-chardev.c b/drivers/i2c/i2c-slave-chardev.c
+index 62f7c03..12d4795 100644
+--- a/drivers/i2c/i2c-slave-chardev.c
++++ b/drivers/i2c/i2c-slave-chardev.c
+@@ -227,3 +227,4 @@ static int i2c_slave_char_remove(struct i2c_client *client)
+ 	.id_table = i2c_slave_char_id,
+ };
+ module_i2c_driver(i2c_slave_char_driver);
++MODULE_LICENSE("GPL v2");
+-- 
+1.7.1
+

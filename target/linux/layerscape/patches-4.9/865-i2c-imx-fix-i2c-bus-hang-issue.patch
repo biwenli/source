@@ -1,0 +1,73 @@
+From 18d76385221dc043162c4a6a8d19d6f5d3a66056 Mon Sep 17 00:00:00 2001
+From: Zhang Ying-22455 <ying.zhang22455@nxp.com>
+Date: Fri, 18 Jan 2019 15:47:35 +0800
+Subject: [PATCH 11/11] i2c: imx: fix i2c bus hang issue
+
+Signed-off-by: Zhang Ying-22455 <ying.zhang22455@nxp.com>
+---
+ drivers/i2c/busses/i2c-imx.c |   27 +++++++++++++++++----------
+ 1 files changed, 17 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-imx.c b/drivers/i2c/busses/i2c-imx.c
+index 8be881c..c7a767f 100644
+--- a/drivers/i2c/busses/i2c-imx.c
++++ b/drivers/i2c/busses/i2c-imx.c
+@@ -654,6 +654,7 @@ static void i2c_imx_slave_process_irq(struct imx_i2c_struct *i2c_imx)
+ {
+ 	unsigned int status, ctl;
+ 	u8 data;
++	int loop = 0;
+ 	struct i2c_client *slave;
+ 
+ 	slave = i2c_imx->slave;
+@@ -665,10 +666,6 @@ static void i2c_imx_slave_process_irq(struct imx_i2c_struct *i2c_imx)
+ 		if (status & I2SR_SRW) {
+ 			/* master wants to read from us */
+ 
+-			/* slave transimt */
+-			ctl |= I2CR_MTX;
+-			imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
+-
+ 			slave->idx = 0;
+ 			slave->tx_valid = 1;
+ 
+@@ -676,7 +673,17 @@ static void i2c_imx_slave_process_irq(struct imx_i2c_struct *i2c_imx)
+ 				msleep(1);
+ 				if(slave->tx_valid == 0)
+ 					break;
++				loop++;
++				if(loop > 100) {
++					slave->tx_valid = 0;
++					return;
++				}
+ 			}
++
++			/* slave transimt */
++			ctl |= I2CR_MTX;
++			imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
++
+ 			/*send data */
+ 			imx_i2c_write_reg(slave->tx_buf[0], i2c_imx, IMX_I2C_I2DR);
+ 			slave->idx = 1;
+@@ -698,12 +705,12 @@ static void i2c_imx_slave_process_irq(struct imx_i2c_struct *i2c_imx)
+ 			if (!(status & I2SR_RXAK)) {	/* received ACK */
+ 				ctl |= I2CR_MTX;
+ 				imx_i2c_write_reg(ctl, i2c_imx, IMX_I2C_I2CR);
+-				if(slave->idx < slave->len) {
+-					data = slave->tx_buf[slave->idx++];
+-					/* send data */
+-					imx_i2c_write_reg(data, i2c_imx, IMX_I2C_I2DR);
+-				} else {
+-				}
++				data = slave->tx_buf[slave->idx];
++				if(slave->idx < 256)
++					slave->idx++;
++
++				/* send data */
++				imx_i2c_write_reg(data, i2c_imx, IMX_I2C_I2DR);
+ 			} else {
+ 				/* received NAK */
+ 				ctl &= ~I2CR_MTX;
+-- 
+1.7.1
+
